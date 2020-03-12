@@ -1,0 +1,116 @@
+/**@requires data from bitrix */
+let webHookOptions = {
+    authCod: 'xxxxxxxxxxxxxxx', //see special security cod from bitrix, in webhooks interface
+    webHookOwnerId: '1', //id of user, which set webhook
+}
+
+class BitrixMain {
+    constructor() {
+        this.eventByForm = undefined;
+        this.dealId = undefined;
+        this.urlData = {};
+
+    }
+
+    setBitrixOptions(e, webHookOptions) {
+        this.eventByForm = e;
+        this.dealId = this.eventByForm.parameter['data[FIELDS][ID]'];
+        this.urlData.baseDomain = this.eventByForm.parameter['auth[client_endpoint]'];
+        this.urlData.webHookOwnerId = webHookOptions.webHookOwnerId;
+        this.urlData.authCod = webHookOptions.authCod;
+        this.urlData.mainUrl = `${this.urlData.baseDomain}${this.urlData.webHookOwnerId}\/${this.urlData.authCod}\/`;
+    }
+
+    /**@method getDeals send a request to get a deal by id
+     * @arguments {string or number} example (5122, 2541, '3652', 4852)
+     * @returns [array] of deals
+     */
+
+    getDeals(...dealIds) {
+        let deals = [];
+        for (let dealId of dealIds) {
+            let deal = new DealsCls(dealId, this.urlData.mainUrl);
+            deal.getValue();
+            deals.push(deal)
+        }
+        return deals
+    }
+
+    /**@method getDeal
+     * @returns object {deal}
+     */
+
+    getDeal() {
+        return this.getDeals(this.dealId)[0]
+    }
+}
+
+class DealsCls extends BitrixMain {
+
+    constructor(dealId, url) {
+        super()
+        this.bitrixRestMethod = `crm.deal.get`;
+        this.value = undefined;
+        this.id = dealId;
+        this.url = url;
+    }
+
+
+    /**@method send a request to get a deal data by id */
+
+    getValue() {
+        if (!this.value) {
+            let url = `${this.url}${this.bitrixRestMethod}`;
+            let formData = {
+                id: this.id,
+            };
+
+            let params = {
+                method: 'post',
+                payload: formData,
+            };
+            this.value = JSON.parse(UrlFetchApp.fetch(url, params));
+        }
+        return this
+    }
+
+    /**@method to build an array with some params for append in spreadsheet
+     * @arguments {string, string, ...} with parameters names
+     * @returns ['param1Value', 'param2value', ...]
+     */
+    getParamsRow(...params) {
+        if (!this.value) {
+            this.getValue()
+        }
+        let result = [];
+        for (let param of params) {
+            result.push(this.value.result[param])
+        };
+        return [result]
+    }
+}
+
+/** EXAMPLE 
+ * 1. set out webhook by lead added 
+ * 2. public your script as webApp, and set url of webApp in Bitrix out webhook
+ * 3. set inbound webhook in Bitrix, get auth key from UI and owner ID (in example url) and put them in webHookOption
+*/
+
+function doPost(e) {
+
+    const webHookOptions = {
+        authCod: 'xxxxxxxxxxxxxxx', //see special security cod from bitrix, in webhooks interface
+        webHookOwnerId: '1', //id of user, which set webhook
+    }
+
+    let Bitrix = new BitrixMain()
+    Bitrix.setBitrixOptions(e, webHookOptions);
+
+    let row = Bitrix.getDeal().getParamsRow('ID', 'DATE_CREATE', 'UF_CRM_1583254123774');
+    
+    let SS = SpreadsheetApp.openById('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
+    let sheet = SS.getSheets()[0];
+
+    sheet.getRange(sheet.getLastRow() + 1, 1, row.length, row[0].length).setValues(row)
+
+}
